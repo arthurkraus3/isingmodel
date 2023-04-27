@@ -58,12 +58,14 @@ vector<vector<int>> ising_model(int N, double temperature, int num_steps,fHandle
     random_device rd;
     mt19937 gen(rd()); // random number generator
     uniform_int_distribution<> dis(0, 1); //creates a uniform distribution between 0 and 1
-    
-    
-    
+
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
-            grid[i][j] = 2*dis(gen) - 1; // fill in random values 
+            if(dis(gen) < 0.5){
+                grid[i][j] = 1;
+            } else {
+                grid[i][j] = -1;
+            }
         }
     }
 
@@ -104,11 +106,11 @@ vector<vector<int>> ising_model(int N, double temperature, int num_steps,fHandle
 // ==============================================================================================================================
 // Example usage of the ising_model function
 int main() {
-    int N = 50;
+    int N = 20;
     int N2 = N*N;
     
-    double temperature = 0.5;
-    int num_steps = 2000000;
+    double temperature = 3.0;
+    int num_steps = 1000000;
     gnuplot *gp = new gnuplot();
     
     string sC;
@@ -135,7 +137,7 @@ int main() {
     }
     FileClose(fC);
 
-    double e,e2;
+    double e;
     int m;
     double avgE,avgE2; //<E>
     double avgM,avgM2; //<M>
@@ -148,23 +150,35 @@ int main() {
     string s;
     fHandle f;
     f = FileCreate("ising.txt");
-    for(int t = 1; t < 101; t++) { //averages vs temperature plots
+    for(int t = 0; t < 100; t++) { //averages vs temperature plots
 
         temperature = 0.03*t;
-        overTemp = 1/temperature;
         printf("Current temperature is: %f\n",temperature);
-
+        
+        //reequilibrate with 1e6
         grid  = ising_model(N, temperature, num_steps,fE, sE); 
+        e = 0;
+        m = 0;
+        avgE = 0; // <E>
+        avgE2 = 0; // <E^2>
+        avgM = 0; // <M>
+        avgM2 = 0; // <E^2>
 
-        e = getEnergy(grid); // energy for the config
-        e2 = e*e;
-        m = getMagnetization(grid); //magnetization for the config
-        
-        avgE = e * overN2; // <E>
-        avgE2 = e2 * overN2; // <E^2>
-        
-        avgM = ((double) m ) * overN2;// <M>
-        avgM2 = ((double) (m*m)) * overN2;// <M^2>
+        //for the averaging
+        for(int n=0;n < N2;n++){
+            grid  = ising_model(N, t, N2,fE, sE); 
+            e = getEnergy(grid);
+            m = getMagnetization(grid);
+            avgE += e*overN2; // <E>
+            avgE2 += e*e*overN2*overN2; // <E^2>
+            avgM+= ((double)m)*overN2; // <M>
+            avgM2 += ((double) (m*m))*overN2*overN2; // <E^2>
+        }
+
+        avgE *= overN2;
+        avgE2 *= overN2;
+        avgM *= overN2;
+        avgM2 *= overN2;
         
         varE = avgE2 - (avgE*avgE);
         varM = avgM2 - (avgM*avgM);
