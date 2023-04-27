@@ -9,6 +9,8 @@
 
 using namespace std;
 
+double h = 0.0;
+
 
 // ==============================================================================================================================
 // Define a function to calculate the energy of the grid using the Ising model Hamiltonian
@@ -22,7 +24,7 @@ double getEnergy(const vector<vector<int>>& grid) {
         for (int j = 0; j < N; j++) {
             int spin = grid[i][j];
             int neighbors = grid[(i-1+N)%N][j] + grid[(i+1)%N][j] + grid[i][(j-1+N)%N] + grid[i][(j+1)%N];
-            energy += -J*spin * neighbors;
+            energy += -J*spin * neighbors - h*spin;
         }
     }
     return energy / 2.0;
@@ -75,39 +77,26 @@ vector<vector<int>> ising_model(int N, double temperature, int num_steps,fHandle
     for (int step = 0; step < num_steps; step++) {
 
         // Step 4: Choose a random spin
-        uniform_int_distribution<> dis2(0, N-1);
-
-
-        
+        uniform_int_distribution<> dis2(0, N-1); 
         int i = dis2(gen);
         int j = dis2(gen);
         int localSpin = grid[i][j];
-
-        // int iup = i+1;
-        // int idown = i-1;
-        // int jup = j+1;
-        // int jdown = j-1;
         
         // Calculate the change in energy if the spin is flipped
         int neighbors = grid[(i-1+N)%N][j] + grid[(i+1)%N][j] + grid[i][(j-1+N)%N] + grid[i][(j+1)%N];
-        //int neighbors = grid[(idown)][j] + grid[iup][j] + grid[i][jdown] + grid[i][jup];
-        double delta_energy = 2.0 * localSpin * neighbors; // comes from the change in energy when flipping from -1 to 1.
+        
+        double delta_energy = 2.0 * localSpin * neighbors + 2*h*localSpin; // comes from the change in energy when flipping from -1 to 1.
 
         // Accept or reject the flip based on the Metropolis criterion
-		//if change in energy is negative, or if the energy is greater than some random number, change it
-
-        
+		//if change in energy is negative, or if the energy is greater than some random number, change it 
         if (delta_energy < 0.0) {
             if(dis(gen) < exp(-delta_energy / temperature)){
                 localSpin *= -1; //flip spin
                 grid[i][j] = localSpin; //update it
                 energy += delta_energy; //add to the total energy the change in energy
                 magnetization += 2 * localSpin; //add to the total magnetization the changed spin
-                //printf("energy : %f \t magnetization: %d \n", energy, magnetization);
             }
         } 
-        // sE = FloatToStr(step) + "\t"+FloatToStr(energy) + "\t"+FloatToStr(magnetization) + "\n";
-        // FileWrite(fE,sE.c_str(),sE.length());
     }
     return grid;
 }
@@ -115,11 +104,11 @@ vector<vector<int>> ising_model(int N, double temperature, int num_steps,fHandle
 // ==============================================================================================================================
 // Example usage of the ising_model function
 int main() {
-    int N = 10;
+    int N = 50;
     int N2 = N*N;
     
-    double temperature = 3.0;
-    int num_steps = 1000000;
+    double temperature = 0.5;
+    int num_steps = 2000000;
     gnuplot *gp = new gnuplot();
     
     string sC;
@@ -148,8 +137,9 @@ int main() {
 
     double e,e2;
     int m;
-    double avgE; //<E>
-    double avgM; //<M>
+    double avgE,avgE2; //<E>
+    double avgM,avgM2; //<M>
+    double varE, varM;
     double cH; //specific heat capacity
     double X;//suseptibility
 
@@ -159,37 +149,43 @@ int main() {
     fHandle f;
     f = FileCreate("ising.txt");
     for(int t = 1; t < 101; t++) { //averages vs temperature plots
+
         temperature = 0.03*t;
         overTemp = 1/temperature;
         printf("Current temperature is: %f\n",temperature);
 
-        //here is where I would want to iterate through and calclate / write to file all the measurements
         grid  = ising_model(N, temperature, num_steps,fE, sE); 
+
         e = getEnergy(grid); // energy for the config
         e2 = e*e;
         m = getMagnetization(grid); //magnetization for the config
         
+        avgE = e * overN2; // <E>
+        avgE2 = e2 * overN2; // <E^2>
+        
+        avgM = ((double) m ) * overN2;// <M>
+        avgM2 = ((double) (m*m)) * overN2;// <M^2>
+        
+        varE = avgE2 - (avgE*avgE);
+        varM = avgM2 - (avgM*avgM);
 
-        avgE = e * overN2;   
-        // printf("e: %f, overN2: %f, avgE: %f \n",e, overN2,avgE);      
-        avgM = ((double) m )* overN2;
-        cH = (e*e*overN2 - (avgE * avgE)) * overTemp;
-        X = (m*m*overN2 - (avgM * avgM))*overTemp;
-        s = FloatToStr(temperature) + "\t"+FloatToStr(avgE) + "\t"+FloatToStr(avgM) + "\t"+FloatToStr(cH) + "\t"+FloatToStr(X) + "\n";
+        cH = varE * overTemp*overTemp;
+        X = varM*overTemp;
+        
+        s = FloatToStr(temperature) + "\t"+FloatToStr(avgE) + "\t"+FloatToStr(abs(avgM)) + "\t"+FloatToStr(cH) + "\t"+FloatToStr(X) + "\n";
         FileWrite(f,s.c_str(),s.length());
     }
     FileClose(fE);
     FileClose(f);    
 
     gp->plotfile("ising.txt","u 1:2 w l t '<E>'");
+    gp->show();
     gp->plotfile("ising.txt","u 1:3 w l t '<M>'");
+    gp->show();
     gp->plotfile("ising.txt","u 1:4 w l t 'c_H'");
+    gp->show();
     gp->plotfile("ising.txt","u 1:5 w l t 'X'");
     gp->show();
-
-    // gp->plotfile("ising.txt","u 1:2 w l t '<E>'");
-    // gp->replotfile("ising.txt","u 1:3 w l t '<M>'");
-    // gp->show();
 
     delete gp;
 
