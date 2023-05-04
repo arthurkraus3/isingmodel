@@ -24,10 +24,10 @@ double getEnergy(const vector<vector<int>>& grid) {
         for (int j = 0; j < N; j++) {
             int spin = grid[i][j];
             int neighbors = grid[(i-1+N)%N][j] + grid[(i+1)%N][j] + grid[i][(j-1+N)%N] + grid[i][(j+1)%N];
-            energy += -J*spin * neighbors - h*spin;
+            energy += -J*spin*neighbors - h*spin;
         }
     }
-    return energy / 2.0;
+    return energy / 4;
 }
 
 // ==============================================================================================================================
@@ -47,14 +47,10 @@ int getMagnetization(const vector<vector<int>>& grid) {
 
 // ==============================================================================================================================
 // Define the main function that implements the Metropolis algorithm
-vector<vector<int>> ising_model(int N, double temperature, int num_steps,fHandle fE,string sE) {
-    
-    
-
+vector<vector<int>> ising_model(int N, double temperature, int num_steps) {
     // Step 1: Initialize a random grid
     vector<vector<int>> grid(N, vector<int>(N));
-    
-    
+
     random_device rd;
     mt19937 gen(rd()); // random number generator
     uniform_int_distribution<> dis(0, 1); //creates a uniform distribution between 0 and 1
@@ -68,7 +64,6 @@ vector<vector<int>> ising_model(int N, double temperature, int num_steps,fHandle
             }
         }
     }
-
 
     // Step 2: Define variables to keep track of energy and magnetization
     double energy = getEnergy(grid);
@@ -96,7 +91,7 @@ vector<vector<int>> ising_model(int N, double temperature, int num_steps,fHandle
                 localSpin *= -1; //flip spin
                 grid[i][j] = localSpin; //update it
                 energy += delta_energy; //add to the total energy the change in energy
-                magnetization += 2 * localSpin; //add to the total magnetization the changed spin
+                magnetization += -2 * localSpin; //add to the total magnetization the changed spin
             }
         } 
     }
@@ -106,24 +101,16 @@ vector<vector<int>> ising_model(int N, double temperature, int num_steps,fHandle
 // ==============================================================================================================================
 // Example usage of the ising_model function
 int main() {
-    int N = 20;
+    int N = 5;
     int N2 = N*N;
-    
     double temperature = 3.0;
     int num_steps = 1000000;
     gnuplot *gp = new gnuplot();
-    
     string sC;
     fHandle fC;
-    fC = FileCreate("config.txt");
-    
-    string sE;
-    fHandle fE;
-    fE = FileCreate("energy.txt");
+    fC = FileCreate("config.txt"); // holds the spin configuration
 
-    int spin;
-    
-    vector<vector<int>> grid = ising_model(N, temperature, num_steps,fE,sE); //this reaches steady state? 
+    vector<vector<int>> grid = ising_model(N, temperature, num_steps); //this reaches steady state? 
 
 
     //writing the equilibrated spin configuration to file for graphing 
@@ -137,59 +124,63 @@ int main() {
     }
     FileClose(fC);
 
-    double e;
-    int m;
-    double avgE,avgE2; //<E>
-    double avgM,avgM2; //<M>
-    double varE, varM;
+    double e,E,M,oTemp,oT2;
+    int spin,m;
+    double avgE,avgE2,varE; //<E>
+    double avgM,avgM2,varM; //<M>
     double cH; //specific heat capacity
     double X;//suseptibility
 
-    double overN2 = 1/((double) N2);
-    double overTemp;
+    double oN2 = 1/((double) N2);
     string s;
     fHandle f;
     f = FileCreate("ising.txt");
     for(int t = 0; t < 100; t++) { //averages vs temperature plots
-
         temperature = 0.03*t;
+        oTemp=1/temperature;
+        oT2 = 1/(temperature*temperature);
         printf("Current temperature is: %f\n",temperature);
         
-        //reequilibrate with 1e6
-        grid  = ising_model(N, temperature, num_steps,fE, sE); 
-        e = 0;
-        m = 0;
-        avgE = 0; // <E>
-        avgE2 = 0; // <E^2>
-        avgM = 0; // <M>
-        avgM2 = 0; // <E^2>
+        e,m,E,M,avgE,avgE2,avgM,avgM2 = 0;
 
-        //for the averaging
-        for(int n=0;n < N2;n++){
-            grid  = ising_model(N, t, N2,fE, sE); 
-            e = getEnergy(grid);
-            m = getMagnetization(grid);
-            avgE += e*overN2; // <E>
-            avgE2 += e*e*overN2*overN2; // <E^2>
-            avgM+= ((double)m)*overN2; // <M>
-            avgM2 += ((double) (m*m))*overN2*overN2; // <E^2>
+        int numSweeps = 4*N2;
+        double oNumSweeps = 1/((double) numSweeps);
+
+
+        for(int i = 0; i < numSweeps; i++)   { //equilibrate the system
+            grid  = ising_model(N, temperature, num_steps); 
         }
 
-        avgE *= overN2;
-        avgE2 *= overN2;
-        avgM *= overN2;
-        avgM2 *= overN2;
+        //for the averaging
+        for(int n=0;n < numSweeps;n++){
+            grid  = ising_model(N, t, num_steps); 
+            e = getEnergy(grid);
+            m = getMagnetization(grid);
+            // avgE += e*oN2; // <E>
+            // avgE2 += e*e*oN2*oN2; // <E^2>
+            // avgM += ((double)m)*oN2; // <M>
+            // avgM2 += ((double) (m*m))*(oN2*oN2); // <E^2>
         
-        varE = avgE2 - (avgE*avgE);
-        varM = avgM2 - (avgM*avgM);
+            avgE += e; // <E>
+            avgE2 += e*e; // <E^2>
+            avgM += ((double)m); // <M>
+            avgM2 += ((double) (m*m)); // <E^2>
+        }
 
-        cH = varE * overTemp*overTemp;
-        X = varM*overTemp;
+        E = avgE * oN2 * oNumSweeps;
+        M = avgM * oN2 * oNumSweeps;
+        varE = ((oN2*oNumSweeps)*avgE2) -  ((oN2*oNumSweeps*oNumSweeps)*(avgE*avgE));
+        varM = ((oN2*oNumSweeps)*avgM2) - (((oN2*oNumSweeps*oNumSweeps))*(avgM*avgM));
         
-        s = FloatToStr(temperature) + "\t"+FloatToStr(avgE) + "\t"+FloatToStr(abs(avgM)) + "\t"+FloatToStr(cH) + "\t"+FloatToStr(X) + "\n";
+        cH = varE * oT2;
+        X = varM * oTemp;
+
+        printf("cH : %f, X: %f\n",cH,X);
+
+        
+        s = FloatToStr(temperature) + "\t"+FloatToStr(e) + "\t"+FloatToStr(m) + "\t"+FloatToStr(cH) + "\t"+FloatToStr(X) + "\n";
         FileWrite(f,s.c_str(),s.length());
     }
-    FileClose(fE);
     FileClose(f);    
 
     gp->plotfile("ising.txt","u 1:2 w l t '<E>'");
